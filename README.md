@@ -1,0 +1,1 @@
+# gentoo-fast-install
