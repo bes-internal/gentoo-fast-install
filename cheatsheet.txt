@@ -4,146 +4,79 @@
 ################     INSTALL    ###########################
 ###########################################################
 
+(RAID version)
 
-fdisk 
-	300	boot
-	1G	swap
-	30-50G	/
-	last	data
 
-mdadm
-	boot level 1 metadata 0.90
-	/    level 1
-        data level 1
+fdisk
+g (new GPT)
+n 100m
+t 1 (EFI system)
+n remaining
+t 29 (RAID linux)
 
-mkfs
+mdadm --create --verbose /dev/md0 --level=1 --raid-devices=2 /dev/sda2 /dev/sdb2
 
-root@sysresccd /root % mount /dev/md126 /mnt/gentoo
-root@sysresccd /root % mkdir /mnt/gentoo/boot
-root@sysresccd /root % mount /dev/md127 /mnt/gentoo/boot
+pvcreate /dev/md0
+vgcreate VGNAME /dev/md0
+lvcreate -n root -L40G VGNAME
+mkfs.ext4 /dev/VGNMAE/root
+
+mount /dev/VGNMAE/root /mnt/gentoo
+mkdir -p /mnt/gentoo/boot/efi1
+mkdir -p /mnt/gentoo/boot/efi2
+mount /dev/sda1 /mnt/gentoo/boot/efi1
+mount /dev/sdb1 /mnt/gentoo/boot/efi2
 
 curl http://mirror.yandex.ru/gentoo-distfiles/releases/amd64/autobuilds/latest-stage3.txt
-wget http://mirror.yandex.ru/gentoo-distfiles/releases/amd64/autobuilds/`curl 
-http://mirror.yandex.ru/gentoo-distfiles/releases/amd64/autobuilds/latest-stage3.txt|tail -n1`
+wget stage3
 tar -xvjf stage3-xxx.tar.bz2 -C /mnt/gentoo/
 mkdir /mnt/gentoo/lib/modules
-cp /livemnt/squashfs/lib/modules/2.6.35-std201-i686 -avr /mnt/gentoo/lib/modules
-cp /livemnt/squashfs/lib/modules/2.6.36-alt201-i686 -avr /mnt/gentoo/lib/modules
-
-cp -av /livemnt/boot/syslinux/{rescuecd,altker32,initram.igz} /mnt/gentoo/boot
-cp -av /livemnt/squashfs/boot/grub /mnt/gentoo/boot
-
-nano /boot/grub/grub.conf
-
-#####
-title Gentoo Linux
-root (hd0,0)
-kernel /boot/rescuecd root=/dev/md126 setkmap=us scandelay=2
-initrd /boot/initram.igz
-#####
-
-grub --no-floppy
-
+rsync -av --copy-links /livemnt/squashfs/lib/modules/*amd64 /mnt/gentoo/lib/modules/
+cp -av /livemnt/boot/syslinux/rescue64 /mnt/gentoo/boot/vmlinuz-`uname -r`
+cp -av /livemnt/boot/syslinux/initram.igz /mnt/gentoo/boot/initrd-`uname -r`
+grub-install --boot-directory=/mnt/gentoo/boot/ --efi-directory=/mnt/gentoo/boot/efi1 --target=x86_64-efi --removable /dev/sda
+grub-install --boot-directory=/mnt/gentoo/boot/ --efi-directory=/mnt/gentoo/boot/efi2 --target=x86_64-efi --removable /dev/sdb
+(get UUID of root) blkid -o value /dev/VGNAME/root
+nano /mnt/gentoo/boot/grub/grub.cfg
 ####
-root (hd0,0)
-setup (hd0)
-root (hd1,0)
-setup (hd1)
-quit
+menuentry "gentoo" {
+ search --no-floppy --fs-uuid --set=root <UUID>
+ linux   /boot/vmlinuz-`uname -r` root=UUID==<UUID> rw setkmap=us scandelay=1 net.ifnames=0
+ initrd  /boot/initrd-`uname -r`
+}
 ####
 
 nano /mnt/gentoo/etc/fstab
-
 ####
-/dev/md127              /boot           ext2            noauto,noatime  1 2
-/dev/md126              /               auto            noatime,notail  0 1
-/dev/sdb2               none            swap            sw              0 0
-/dev/sdd2               none            swap            sw              0 0
+UUID=<UUID>       /       ext4    rw,noatime      0 1
 ####
 
-nano /mnt/gentoo/etc/make.conf
-
-#####
-CFLAGS="-O2 -march=native -fomit-frame-pointer -pipe"
-#CHOST="i686-pc-linux-gnu"
-CHOST="x86_64-pc-linux-gnu"
-CXXFLAGS="${CFLAGS}"
-MAKEOPTS="-j2"
-#-----------------------------------------------------------------
-LINGUAS="en en_US"
-LANGUAGE="07"
-ACCEPT_KEYWORDS="~amd64"
-AUTOCLEAN="yes"
-PORTAGE_NICENESS=19
-#-----------------------------------------------------------------
-USE="acl acpi bash-completion -berkdb bzip2 bzlib \
-charconv -cups curl depth32 domainkeys dovecot-sasl \
-exiscan-acl extensions extraengine \
-fastcgi fontconfig -fortran \
--glibc-compat20 -glibc-omitfp gocr gpm -gs -gtk \
--ipv6 \
--jbig jpeg jpeg2k -kerberos \
--l7filter lm_sensors logrotate lzw \
-mysql \
-nls nocardbus nosendmail nptl nptlonly ocrad \
-pam pam_console pam_timestamp pg-intdatetime png pop3d -python reiser4 reiserfs \
-samba sasl slang sockets spf gnutls ssl symlink sysvipc -tcpd tesseract threads tiff truetype \
-urandom unicode userlocales utf8 vchroot winbind -wmf -X xfs xml"
-
-CONFIG_PROTECT="/usr/libexec/munin/plugins"
-#-----------------------------------------------------------------
-FEATURES="sandbox metadata-transfer"
-#-----------------------------------------------------------------
-SYNC="rsync://ftp.mgts.by/gentoo-portage/"
-GENTOO_MIRRORS="http://ftp.byfly.by/pub/gentoo-distfiles/"
-#GENTOO_MIRRORS="http://mirror.yandex.ru/gentoo-distfiles/ http://distfiles.gentoo.org 
-dev.gentooexperimental.org"
-#FETCHCOMMAND="/usr/bin/getdelta.sh \${URI}"
-#-----------------------------------------------------------------
-APACHE2_MPMS="worker"
-APACHE2_MODULES="*"
-
-#PORTDIR_OVERLAY="/usr/local/portage"
-#source /usr/local/layman/make.conf
-
-#PORTAGE_RSYNC_EXTRA_OPTS="-q"
-#############
-
-
-nano etc/conf.d/net
-
+nano /mnt/gentoo/etc/conf.d/net
 ########
-config_eth0="<ip>/24"
-routes_eth0="default gw <ip>"
+config_net0="<ip>/24"
+routes_net0="default gw <gwip>"
+#####
+
+nano /mnt/gentoo/etc/udev/rules.d/70-net.rules 
+#####
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}==" `ip link` ", NAME="net0"
 #####
 
 nano /mnt/gentoo/etc/resolv.conf
-
 #####
 nameserver 8.8.8.8
 #####
 
-ln -s /mnt/gentoo/etc/init.d/net.lo /mnt/gentoo/etc/init.d/net.eth0
+mkdir -p /mnt/gentoo/root/.ssh/
+nano /mnt/gentoo/root/.ssh/authorized_keys
+#####
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBT3v7tjra5DinsngmbzaBMSs9niMAM0+/Jbgt9Lfit+ bes.internal@gmail.com
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGurZrNMpsx/SLf1NvjNr4jVD9/pR5TDgD5ph6VwHER6 move tool
+#####
 
 chroot /mnt/gentoo /bin/bash
+ln -s /etc/init.d/net.lo /etc/init.d/net.net0
+rc-update add sshd
+rc-update add net.net0
 passwd
-
-
-
-
-  #####################################
- ############### stage4 ##############
-####################################
-
-# mknod -m 660 /mnt/gentoo/dev/console c 5 1
-# mknod -m 660 /mnt/gentoo/dev/null c 1 3
-(опционально) # mknod -m 660 /mnt/gentoo/dev/tty1 c 4 1
-# mount -t proc none /mnt/gentoo/proc
-# mount -o bind /dev /mnt/gentoo/dev
-# chroot /mnt/gentoo /bin/bash
-# env-update; source /etc/profile
-! /boot/grub/grub.conf (или /boot/grub/menu.lst)
-! /etc/fstab
-! /etc/conf.d/net
-! udev 70-persistens
 
