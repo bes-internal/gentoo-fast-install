@@ -4,7 +4,7 @@
 ################     INSTALL    ###########################
 ###########################################################
 
-(RAID version)
+v0.02 raid efi
 
 
 fdisk
@@ -17,13 +17,15 @@ t 29 (RAID linux)
 mdadm --create --verbose /dev/md0 --level=1 --raid-devices=2 /dev/sda2 /dev/sdb2
 
 pvcreate /dev/md0
-vgcreate VGNAME /dev/md0
-lvcreate -n root -L40G VGNAME
-mkfs.ext4 /dev/VGNMAE/root
+vgcreate <VG> /dev/md0
+lvcreate -n root -L40G <VG>
+mkfs.ext4 /dev/<VG>/root
 
-mount /dev/VGNMAE/root /mnt/gentoo
+mount /dev/<VG>/root /mnt/gentoo
 mkdir -p /mnt/gentoo/boot/efi1
 mkdir -p /mnt/gentoo/boot/efi2
+mkfs.fat /dev/sda1
+mkfs.fat /dev/sdb1
 mount /dev/sda1 /mnt/gentoo/boot/efi1
 mount /dev/sdb1 /mnt/gentoo/boot/efi2
 
@@ -31,24 +33,25 @@ curl http://mirror.yandex.ru/gentoo-distfiles/releases/amd64/autobuilds/latest-s
 wget stage3
 tar -xvjf stage3-xxx.tar.bz2 -C /mnt/gentoo/
 mkdir /mnt/gentoo/lib/modules
+
 rsync -av --copy-links /livemnt/squashfs/lib/modules/*amd64 /mnt/gentoo/lib/modules/
 cp -av /livemnt/boot/syslinux/rescue64 /mnt/gentoo/boot/vmlinuz-`uname -r`
 cp -av /livemnt/boot/syslinux/initram.igz /mnt/gentoo/boot/initrd-`uname -r`
+
 grub-install --boot-directory=/mnt/gentoo/boot/ --efi-directory=/mnt/gentoo/boot/efi1 --target=x86_64-efi --removable /dev/sda
 grub-install --boot-directory=/mnt/gentoo/boot/ --efi-directory=/mnt/gentoo/boot/efi2 --target=x86_64-efi --removable /dev/sdb
-(get UUID of root) blkid -o value /dev/VGNAME/root
 nano /mnt/gentoo/boot/grub/grub.cfg
 ####
 menuentry "gentoo" {
- search --no-floppy --fs-uuid --set=root <UUID>
- linux   /boot/vmlinuz-`uname -r` root=UUID==<UUID> rw setkmap=us scandelay=1 net.ifnames=0
- initrd  /boot/initrd-`uname -r`
+insmod all_video
+linux   /boot/vmlinuz-`uname -r` root=/dev/mapper/<VG>-root rw setkmap=us scandelay=1 net.ifnames=0 rootfstype=ext4 dolvm domdadm
+initrd  /boot/initrd-`uname -r`
 }
 ####
 
 nano /mnt/gentoo/etc/fstab
 ####
-UUID=<UUID>       /       ext4    rw,noatime      0 1
+/dev/mapper/<VG>-root       /       ext4    rw,noatime,discard      0 1
 ####
 
 nano /mnt/gentoo/etc/conf.d/net
@@ -57,9 +60,10 @@ config_net0="<ip>/24"
 routes_net0="default gw <gwip>"
 #####
 
+(get interface <MAC>) ip link
 nano /mnt/gentoo/etc/udev/rules.d/70-net.rules 
 #####
-SUBSYSTEM=="net", ACTION=="add", ATTR{address}==" `ip link` ", NAME="net0"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="<MAC>", NAME="net0"
 #####
 
 nano /mnt/gentoo/etc/resolv.conf
@@ -79,4 +83,3 @@ ln -s /etc/init.d/net.lo /etc/init.d/net.net0
 rc-update add sshd
 rc-update add net.net0
 passwd
-
